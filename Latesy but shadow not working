@@ -1,0 +1,699 @@
+#include <windows.h>
+#include <GL/glut.h>
+#include <math.h>
+
+// WINDOW TITLE
+char title[] = "All-In-One Umbrella";
+int refreshMills = 10;// Refresh interval in milliseconds
+
+// GLOBAL VARIABLES
+// Umbrella Rotation
+GLfloat angleUmbrella = 0.0f;// Rotational angle for the umbrella
+// Umbrella Canopy
+GLfloat canopyOpenedRadius = 1.06f;// Initial radius of Canopy
+GLfloat canopyHeight = 1.0f;// Initial length of Canopy
+GLfloat canopySpeed = 0.02f;// Speed of Canopy
+GLfloat canopyOpenRatio = 0.2f;
+bool isUmbrellaOpen = false;
+// Umbrella Canopy Shield
+GLfloat shieldHeight = 0.0f;// Height of the shield
+bool isShieldActive = false;// Flag for the shield state
+const GLfloat shieldSpeed = 0.01f;// Speed of the shield movement
+const GLfloat maxShieldHeight = 0.4f;// Maximum height of the shield (66% of shaft length)
+// Umbrella Shaft Extension
+GLfloat shaftLength = 1.3f;// Initial length of the shaft
+GLfloat shaftExtendSpeed = 0.02f;// Speed of extension
+GLfloat shaftRadius = 0.04f;
+bool isShaftExtended = false;
+// Handle(Bottle)
+GLfloat handleBaseY = -0.5f;// Base Y position of the handle
+GLfloat handlePositionY = -0.5f;;// Initial Y position of the handle
+GLfloat handleMoveSpeed = 0.0001f;// Speed of downward movement (units per frame)
+bool isHandleRotate = false;// Flag to trigger animation
+// Mouthpiece
+GLfloat mouthpieceWidth = 0.04f;// Width of the mouthpiece
+GLfloat mouthpieceHeight = 0.1f;// Height of the mouthpiece
+GLfloat mouthpieceDepth = 0.02f;// Depth of the mouthpiece
+GLfloat mouthpieceAngle = 0.0f;// Rotation angle for the mouthpiece
+GLfloat mouthpieceSpeed = 1.0f;
+bool isMouthpieceRotate = false;
+// Zooming
+GLfloat zoomFactor = 1.0f;// Initial zoom distance
+const GLfloat zoomSpeed = 0.02f; // Speed of zoom transition
+bool isZooming = false;
+
+bool isLightingEnabled = true; // Tracks if lighting is enabled
+static GLfloat groundPlane[4] = {0.0f, 1.0f, 0.0f, 1.5f};
+static GLfloat lightPos[4] = {4.0f, 4.0f, 0.0f, 1.0f};
+static GLfloat lightAmb[4] = {0.2f, 0.2f, 0.2f, 1.0f};
+
+// OPENGL INITIALIZATION
+void initGL(){
+    glClearColor(0.5f, 0.5f, 1.0f, 1.0f);// Set background color
+    glEnable(GL_DEPTH_TEST);// Enable depth testing for z-culling
+    glDepthFunc(GL_LEQUAL);// Set the type of depth-test
+    glClearDepth(1.0f);// Set background depth to farthest
+    glColorMaterial(GL_FRONT_AND_BACK, GL_AMBIENT_AND_DIFFUSE);
+    glShadeModel(GL_SMOOTH);// Enable smooth shading
+    glHint(GL_PERSPECTIVE_CORRECTION_HINT, GL_NICEST);// Nice perspective corrections
+    // Lighting setup
+    glEnable(GL_LIGHTING);
+    glEnable(GL_LIGHT0);
+    glLightfv(GL_LIGHT0, GL_POSITION, lightPos);
+    glLightfv(GL_LIGHT0, GL_AMBIENT, lightAmb);
+    glEnable(GL_NORMALIZE);// Normalize normals for consistent lighting
+}
+
+void myShadowMatrix(float ground[4], float light[4]) {
+    float dot = ground[0] * light[0] + ground[1] * light[1] + ground[2] * light[2] + ground[3] * light[3];
+    float shadowMat[4][4];
+    shadowMat[0][0] = dot - light[0] * ground[0];
+    shadowMat[1][0] = 0.0 - light[0] * ground[1];
+    shadowMat[2][0] = 0.0 - light[0] * ground[2];
+    shadowMat[3][0] = 0.0 - light[0] * ground[3];
+    shadowMat[0][1] = 0.0 - light[1] * ground[0];
+    shadowMat[1][1] = dot - light[1] * ground[1];
+    shadowMat[2][1] = 0.0 - light[1] * ground[2];
+    shadowMat[3][1] = 0.0 - light[1] * ground[3];
+    shadowMat[0][2] = 0.0 - light[2] * ground[0];
+    shadowMat[1][2] = 0.0 - light[2] * ground[1];
+    shadowMat[2][2] = dot - light[2] * ground[2];
+    shadowMat[3][2] = 0.0 - light[2] * ground[3];
+    shadowMat[0][3] = 0.0 - light[3] * ground[0];
+    shadowMat[1][3] = 0.0 - light[3] * ground[1];
+    shadowMat[2][3] = 0.0 - light[3] * ground[2];
+    shadowMat[3][3] = dot - light[3] * ground[3];
+    glMultMatrixf((const GLfloat*)shadowMat);
+}
+
+void drawCanopy(){
+    if (!isLightingEnabled) {
+        // Use glColor3f when lighting is disabled
+        glColor3f(0.3f, 0.1f, 0.1f);
+    } else {
+        // Use material properties when lighting is enabled
+        GLfloat umbrellaColor[4] = {0.8f, 0.4f, 0.4f, 1.0f};
+        glMaterialfv(GL_FRONT, GL_AMBIENT_AND_DIFFUSE, umbrellaColor);
+    }
+    // Draw Canopy
+    for (int i = 0; i < 8; ++i) {
+        GLfloat angle1 = i * 2.0f * M_PI / 8;
+        GLfloat angle2 = (i + 1) * 2.0f * M_PI / 8;
+        for (int j = 0; j < 8; ++j) {
+            GLfloat height1 = j * canopyHeight / 8;
+            GLfloat height2 = (j + 1) * canopyHeight / 8;
+            GLfloat radius1 = canopyOpenRatio * canopyOpenedRadius * (1 - pow(height1 / canopyHeight, 2));
+            GLfloat radius2 = canopyOpenRatio * canopyOpenedRadius * (1 - pow(height2 / canopyHeight, 2));
+            glBegin(GL_TRIANGLES);
+            glNormal3f(radius1 * cos(angle1), height1, radius1 * sin(angle1));
+            glVertex3f(radius1 * cos(angle1), height1, radius1 * sin(angle1));
+            glVertex3f(radius2 * cos(angle1), height2, radius2 * sin(angle1));
+            glVertex3f(radius1 * cos(angle2), height1, radius1 * sin(angle2));
+            glNormal3f(radius1 * cos(angle1), height1, radius1 * sin(angle1));
+            glVertex3f(radius1 * cos(angle2), height1, radius1 * sin(angle2));
+            glVertex3f(radius2 * cos(angle1), height2, radius2 * sin(angle1));
+            glVertex3f(radius2 * cos(angle2), height2, radius2 * sin(angle2));
+            glEnd();
+        }
+    }
+}
+
+void drawEndTop(){
+    if (!isLightingEnabled) {
+        // Use glColor3f when lighting is disabled
+        glColor3f(0.2f, 0.2f, 0.2f);
+    } else {
+        // Use material properties when lighting is enabled
+        GLfloat endTopColor[4] = {0.4f, 0.4f, 0.4f, 1.0f};
+        glMaterialfv(GL_FRONT, GL_AMBIENT_AND_DIFFUSE, endTopColor);
+    }
+    // Draw End Top
+    GLUquadric* quad = gluNewQuadric();
+    glPushMatrix();
+    glTranslatef(0.0f, canopyHeight+0.1f, 0.0f);// Position at the tip of the Umbrella Canopy
+    glRotatef(90.0f, 1.0f, 0.0f, 0.0f);// Rotate the End Top vertically
+    gluCylinder(quad, 0.04f, 0.038f, 0.18f, 80, 80);// Cylinder dimensions
+    glPopMatrix();
+    gluDeleteQuadric(quad);// Clean up
+}
+
+void drawShaft(){
+    if (!isLightingEnabled) {
+        // Use glColor3f when lighting is disabled
+        glColor3f(0.0f, 0.0f, 0.0f);
+    } else {
+        // Use material properties when lighting is enabled
+        GLfloat umbrellaColor[4] = {0.1f, 0.1f, 0.1f, 1.0f};
+        glMaterialfv(GL_FRONT, GL_AMBIENT_AND_DIFFUSE, umbrellaColor);
+    }
+    // Draw Shaft
+    GLUquadric* quad2 = gluNewQuadric();
+    glPushMatrix();
+    glTranslatef(0.0f, 0.8f, -0.01f); // Position the Umbrella Shaft to the bottom of the Umbrella Canopy
+    glRotatef(90.0f, 1.0f, 0.0f, 0.0f); // Rotate to align it vertically
+    gluCylinder(quad2, 0.031, 0.04, shaftLength, 20, 8); // Draw the Umbrella Shaft
+    glPopMatrix();
+    gluDeleteQuadric(quad2);
+}
+
+void drawHandle(){
+    if (!isLightingEnabled) {
+        // Use glColor3f when lighting is disabled
+        glColor3f(0.2f, 0.2f, 0.2f);
+    } else {
+        // Use material properties when lighting is enabled
+        GLfloat umbrellaColor[4] = {0.4f, 0.4f, 0.4f, 1.0f};
+        glMaterialfv(GL_FRONT, GL_AMBIENT_AND_DIFFUSE, umbrellaColor);
+    }
+    GLUquadric* quad3 = gluNewQuadric();
+    glPushMatrix();
+    glColor3f(0.5f, 0.5f, 0.5f);// Handle color
+    glTranslatef(0.0f, handlePositionY, -0.01f);// Position the Umbrella Shaft to the bottom of the Umbrella Canopy
+    glRotatef(90.0f, 1.0f, 0.0f, 0.0f);// Rotate it vertically
+    gluCylinder(quad3, 0.04, 0.04, 0.238f, 80, 80);// Create a torus
+    glPopMatrix();
+    // Draw Top Screw On Handle
+    glPushMatrix();
+    glColor3f(0.4f, 0.4f, 0.4f);// Screw color
+    glTranslatef(0.0f, handlePositionY+0.06f, -0.01f);// Position at the top of the handle
+    glRotatef(90.0f, 1.0f, 0.0f, 0.0f);// Rotate vertically
+    gluCylinder(quad3, 0.02, 0.02, 0.066f, 30, 30);// Create a tiny cylinder to act as the screw
+    glPopMatrix();
+    // Draw Screw Threads (Helical Pattern)
+    float screwRadius = 0.02f;// Matches the radius of the main screw cylinder
+    int threadSegments = 200;// Smoothness of the helical thread
+    float screwHeight = 0.066f;// Height of the screw
+    int threadTurns = 6;// Number of complete spiral turns
+    glPushMatrix();
+    glColor3f(0.3f, 0.3f, 0.3f);// Thread color
+    glLineWidth(1.2f);// Adjust this value as needed
+    glBegin(GL_LINE_STRIP);
+    for (int i = 0; i < threadSegments; i++) {
+        // Calculate helical path
+        float t = (float)i/threadSegments;// Normalized position along the helix
+        float angle = t*threadTurns*360.0f;// Spiral angle
+        float y = handlePositionY+0.06f-(t*screwHeight);// Position along the height of the screw
+        float x = screwRadius*cos(angle*M_PI/180.0f);// X coordinate (circular path)
+        float z = screwRadius*sin(angle*M_PI/180.0f)-0.01f;// Z coordinate (circular path)
+        // Translate to thread position
+        glVertex3f(x, y, z);
+    }
+    glEnd();
+    glPopMatrix();
+    // Draw Handle Details
+    float d = handlePositionY-0.03f;
+    for(int i = 0; i <= 4; i++){
+        glPushMatrix();
+        glColor3f(0.5f, 0.5f, 0.5f);// Umbrella Handle color
+        glTranslatef(0.0f, d, 0.0f);// Move to the end of the expected area
+        glRotatef(90.0f, 1.0f, 0.0f, 0.0f);// Rotate torus to align with the Z-axis
+        glutSolidTorus(0.02, 0.025, 20, 20);// Create a torus
+        glPopMatrix();
+        d -= 0.05f;
+    }
+    gluDeleteQuadric(quad3);
+}
+
+void drawMouthpiece(){
+    if (!isLightingEnabled) {
+        // Use glColor3f when lighting is disabled
+        glColor3f(0.0f, 0.0f, 0.0f);
+    } else {
+        // Use material properties when lighting is enabled
+        GLfloat umbrellaColor[4] = {0.1f, 0.1f, 0.1f, 1.0f};
+        glMaterialfv(GL_FRONT, GL_AMBIENT_AND_DIFFUSE, umbrellaColor);
+    }
+    // Draw Mouthpiece
+    glPushMatrix();
+    glTranslatef(0.0f, handlePositionY-0.18f, -0.04f);// Position it at the bottom of the handle
+    glTranslatef(0.0f, -mouthpieceHeight/2.0f, 0.0f);// Translate down by half the height of the mouthpiece
+    glRotatef(mouthpieceAngle, 1.0f, 0.0f, 0.0f);// Rotate the mouthpiece
+    glTranslatef(0.0f, mouthpieceHeight / 2.0f, 0.0f);// Translate back up to position
+    glScalef(mouthpieceWidth, mouthpieceHeight, mouthpieceDepth);// Scale to the desired dimensions
+    // Draw The Rectangular Mouthpiece
+    glBegin(GL_QUADS);
+        // Front face
+        glVertex3f(-0.5f, -0.5f, 0.5f);
+        glVertex3f(0.5f, -0.5f, 0.5f);
+        glVertex3f(0.5f, 0.5f, 0.5f);
+        glVertex3f(-0.5f, 0.5f, 0.5f);
+        // Back face
+        glVertex3f(-0.5f, -0.5f, -0.5f);
+        glVertex3f(-0.5f, 0.5f, -0.5f);
+        glVertex3f(0.5f, 0.5f, -0.5f);
+        glVertex3f(0.5f, -0.5f, -0.5f);
+        // Left face
+        glVertex3f(-0.5f, -0.5f, -0.5f);
+        glVertex3f(-0.5f, -0.5f, 0.5f);
+        glVertex3f(-0.5f, 0.5f, 0.5f);
+        glVertex3f(-0.5f, 0.5f, -0.5f);
+        // Right face
+        glVertex3f(0.5f, -0.5f, 0.5f);
+        glVertex3f(0.5f, -0.5f, -0.5f);
+        glVertex3f(0.5f, 0.5f, -0.5f);
+        glVertex3f(0.5f, 0.5f, 0.5f);
+        // Top face
+        glVertex3f(-0.5f, 0.5f, 0.5f);
+        glVertex3f(0.5f, 0.5f, 0.5f);
+        glVertex3f(0.5f, 0.5f, -0.5f);
+        glVertex3f(-0.5f, 0.5f, -0.5f);
+        // Bottom face
+        glVertex3f(-0.5f, -0.5f, -0.5f);
+        glVertex3f(0.5f, -0.5f, -0.5f);
+        glVertex3f(0.5f, -0.5f, 0.5f);
+        glVertex3f(-0.5f, -0.5f, 0.5f);
+    glEnd();
+    glPopMatrix();
+}
+
+void drawUSB(){
+    if (!isLightingEnabled) {
+        // Use glColor3f when lighting is disabled
+        glColor3f(0.2f, 0.2f, 0.2f);
+    } else {
+        // Use material properties when lighting is enabled
+        GLfloat umbrellaColor[4] = {0.4f, 0.4f, 0.4f, 1.0f};
+        glMaterialfv(GL_FRONT, GL_AMBIENT_AND_DIFFUSE, umbrellaColor);
+    }
+    // Draw USB Charging Spot
+    glPushMatrix();
+    GLfloat widthUSB = 0.02f;// Width of the USB port
+    GLfloat heightUSB = 0.04f;// Height of the USB port
+    GLfloat depthInsetUSB = 0.005f;// Radius of the offset of Umbrella Shaft
+    GLfloat shaftRadiusUSB = 0.04f;// Radius of the Umbrella Shaft
+    GLfloat angleStepUSB = M_PI/20;// Angle step for smooth curvature (more segments for smoother curves)
+    // Position and rotation to align with the shaft curvature
+    glTranslatef(0.0f, -shaftLength+0.9f, 0.0348f);// Adjust the position vertically
+    // Draw the curved rectangle
+    glBegin(GL_QUAD_STRIP);
+    for(GLfloat angle = -widthUSB/(2*shaftRadiusUSB); angle <= widthUSB/(2*shaftRadiusUSB); angle += angleStepUSB){
+        GLfloat x = shaftRadiusUSB*sin(angle);// Curve around the shaft
+        GLfloat z = shaftRadiusUSB*cos(angle)-shaftRadiusUSB-depthInsetUSB;
+        glVertex3f(x, heightUSB/2.0f, z);// Top edge
+        glVertex3f(x, -heightUSB/2.0f, z);// Bottom edge
+    }
+    glEnd();
+    glPopMatrix();
+}
+
+GLfloat runnerPosition = 0.0f;
+void drawRunner(){
+    if (!isLightingEnabled) {
+        // Use glColor3f when lighting is disabled
+        glColor3f(0.2f, 0.2f, 0.2f);
+    } else {
+        // Use material properties when lighting is enabled
+        GLfloat umbrellaColor[4] = {0.4f, 0.4f, 0.4f, 1.0f};
+        glMaterialfv(GL_FRONT, GL_AMBIENT_AND_DIFFUSE, umbrellaColor);
+    }
+    // Draw Runner
+    GLUquadric* quad4 = gluNewQuadric();
+    glPushMatrix();
+    runnerPosition = 0.5f*canopyHeight*canopyOpenRatio;// Dynamic position
+    glTranslatef(0.0f, runnerPosition, -0.01f);// Position the runner on shaft
+    glRotatef(90.0f, 1.0f, 0.0f, 0.0f);// Rotate to align with the shaft
+    gluCylinder(quad4, 0.045f, 0.045f, 0.1f, 20, 5);// Small cylindrical runner
+    glPopMatrix();
+    gluDeleteQuadric(quad4);// Clean up
+}
+
+void drawRibs(){
+    if (!isLightingEnabled) {
+        // Use glColor3f when lighting is disabled
+        glColor3f(0.0f, 0.0f, 0.0f);
+    } else {
+        // Use material properties when lighting is enabled
+        GLfloat umbrellaColor[4] = {0.1f, 0.1f, 0.1f, 1.0f};
+        glMaterialfv(GL_FRONT, GL_AMBIENT_AND_DIFFUSE, umbrellaColor);
+    }
+    // Draw Ribs
+    int ribSegments = 20;
+    GLfloat step1 = canopyHeight/ribSegments;
+    GLfloat angleStep = 2.0f * M_PI / 8;
+    // Short Ribs
+    for(int i = 0; i < 8; ++i){
+        GLfloat angle = i*angleStep;
+        GLfloat radius = 0.5f*canopyOpenRatio*canopyOpenedRadius;
+        GLfloat ribLength = 0.7f*canopyHeight-runnerPosition;
+        glBegin(GL_LINES);
+        glVertex3f(0.0f, runnerPosition, 0.0f);// Start at the shaft
+        glVertex3f(radius*cos(angle), runnerPosition+ribLength, radius*sin(angle));// End at canopy edge
+        glEnd();
+    }
+    // Long Ribs
+    for(int i = 0; i < 8; ++i){
+        GLfloat angle = i * angleStep;
+        glBegin(GL_LINE_STRIP);
+        for(int j = 0; j <= ribSegments; ++j){
+            GLfloat y = j*step1;
+            GLfloat radius = canopyOpenRatio*canopyOpenedRadius*(1-pow(y/canopyHeight, 2))-0.008f;
+            GLfloat x = radius*cos(angle);
+            GLfloat z = radius*sin(angle);
+            glVertex3f(x, y, z);// Create the rib
+        }
+        glEnd();
+    }
+}
+
+void drawShield(){
+    if (!isLightingEnabled) {
+        // Use material properties when lighting is enabled
+        glColor4f(1.0f, 1.0f, 1.0f, 0.2f); // Set color with transparency
+    } else {
+        // Use material properties when lighting is enabled
+        GLfloat umbrellaColor[4] = {1.0f, 1.0f, 1.0f, 0.4f};
+        glMaterialfv(GL_FRONT, GL_AMBIENT_AND_DIFFUSE, umbrellaColor);
+    }
+    // Draw Canopy Shield
+    if(shieldHeight > 0.0f){
+        GLfloat shieldRadius = canopyOpenedRadius*canopyOpenRatio;// Match the shield radius to the opened canopy radius
+        glEnable(GL_BLEND);// Enable blending for transparency
+        glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+        glDepthMask(GL_FALSE);// Disable depth writing for the shield
+        glPushMatrix();
+        glTranslatef(0.0f, -canopyHeight*(1-canopyOpenRatio)-0.01f, 0.0f);// Position the shield at the bottom of the opened canopy
+        // Draw the octagonal shield (front and back faces)
+        glBegin(GL_QUADS);
+        for(int face = 0; face < 2; ++face){// Loop for both front and back faces
+            for (int i = 0; i < 8; i++) {
+                GLfloat angle1 = i*M_PI/4;// 45 degrees for octagon
+                GLfloat angle2 = (i+1)*M_PI/4;
+                // Calculate the outer vertices of the octagon
+                GLfloat x1 = shieldRadius*cos(angle1);
+                GLfloat z1 = shieldRadius*sin(angle1);
+                GLfloat x2 = shieldRadius*cos(angle2);
+                GLfloat z2 = shieldRadius*sin(angle2);
+                // Draw the quad
+                glVertex3f(x1, 0.0f, z1);// First vertex of the quad (top)
+                glVertex3f(x2, 0.0f, z2);// Second vertex of the quad (top)
+                glVertex3f(x2, -shieldHeight, z2);// Third vertex of the quad (bottom)
+                glVertex3f(x1, -shieldHeight, z1);// Fourth vertex of the quad (bottom)
+            }
+            glEnd();
+            glFrontFace(face == 0 ? GL_CW : GL_CCW);// Adjust the winding order for the back face
+        }
+        glPopMatrix();
+        glDepthMask(GL_TRUE);// Enable depth writing again
+        glDisable(GL_BLEND);// Disable blending after drawing the shield
+    }
+}
+
+void drawAvailableCircles(){
+    if (!isLightingEnabled) {
+        // Use glColor3f when lighting is disabled
+        glColor3f(0.1f, 0.1f, 0.1f);
+    } else {
+        // Use material properties when lighting is enabled
+        GLfloat umbrellaColor[4] = {0.3f, 0.3f, 0.3f, 1.0f};
+        glMaterialfv(GL_FRONT, GL_AMBIENT_AND_DIFFUSE, umbrellaColor);
+    }
+    glTranslatef(0.8f, -2.1f, -6.0f);
+    // Draw Circles As Buttons
+    glDisable(GL_DEPTH);
+    for(int i = 0; i < 4; i++){
+        glPushMatrix();
+        glLoadIdentity();
+        glTranslatef(-0.9f + i*0.6f, -2.0f, 0.95f);// Position smaller circles
+        GLUquadric* smallQuad = gluNewQuadric();
+        if (i == 0) {
+            gluDisk(smallQuad, 0.0f, 0.25f, 30, 1);// Create smaller circles
+        } else if (i == 1) {
+            gluDisk(smallQuad, 0.0f, 0.3f, 30, 1);// Create smaller circles
+        } else {
+            gluDisk(smallQuad, 0.0f, 0.25f, 30, 1);// Create smaller circles
+        }
+        gluDeleteQuadric(smallQuad);
+        glPopMatrix();
+    }
+    glEnable(GL_DEPTH);
+}
+
+void drawAvailableButton(){
+    if (!isLightingEnabled) {
+        // Use glColor3f when lighting is disabled
+        glColor3f(0.2f, 0.2f, 0.2f);
+    } else {
+        // Use material properties when lighting is enabled
+        GLfloat umbrellaColor[4] = {0.4f, 0.4f, 0.4f, 1.0f};
+        glMaterialfv(GL_FRONT, GL_AMBIENT_AND_DIFFUSE, umbrellaColor);
+    }
+    glDisable(GL_DEPTH);
+    // Available Buttons
+    glPushMatrix();
+    glLoadIdentity();
+    glTranslatef(0.8f, -2.1f, -8.0f);
+    glTranslatef(0.0f, 0.8f, -2.0f);// Position rectangle in the bottom left corner
+    glScalef(2.5f, 0.8f, 0.01f);// Scale to create a long rectangle
+    glutSolidCube(1.0f);// Draw the rectangle
+    glPopMatrix();
+    drawAvailableCircles();
+    glEnable(GL_DEPTH);
+}
+
+// FUNCTION TO DRAW THE UMBRELLA
+void drawUmbrella(){
+    glPushMatrix();
+    glTranslatef(0.0f, 1.0f, -10.0f);// Move into the screen, translate to position the Umbrella
+    glScalef(zoomFactor, zoomFactor, zoomFactor);
+    glRotatef(angleUmbrella, 0.0f, 1.6f, 0.0f);// Rotate the Umbrella
+    glRotatef(25.0f, 1.0f, 0.0f, 0.0f);// So the Umbrella face the viewers
+    drawCanopy();
+    drawEndTop();
+    drawShaft();
+    drawHandle();
+    drawMouthpiece();
+    drawUSB();
+    drawRunner();
+    drawRibs();
+    drawShield();
+    drawAvailableButton();
+    glPopMatrix();
+}
+
+void drawGround() {
+    // Disable depth writes for the shadow
+    glDepthMask(GL_FALSE);
+    glPushMatrix();
+    glTranslatef(0.0f, -1.5f, -12.0f);
+
+    if (!isLightingEnabled) {
+        // Use glColor3f when lighting is disabled
+        glColor3f(0.1f, 0.3f, 0.1f);
+    } else {
+        // Use material properties when lighting is enabled
+        GLfloat groundMatAmbient[4] = {0.0f, 0.3f, 0.0f, 0.6f};
+        glMaterialfv(GL_FRONT, GL_AMBIENT_AND_DIFFUSE, groundMatAmbient);
+    }
+
+    glBegin(GL_QUADS);
+    glVertex3f(-3.0f, 0.9f, -1.0f);
+    glVertex3f(3.0f, 0.9f, -1.0f);
+    glVertex3f(3.0f, -1.0f, 1.0f);
+    glVertex3f(-3.0f, -1.0f, 1.0f);
+    glEnd();
+    glPopMatrix();
+    glDepthMask(GL_TRUE); // Re-enable depth writes
+}
+
+void drawShadow(){
+    // Draw shadow
+    glEnable(GL_BLEND);
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+    if (!isLightingEnabled) {
+        // Use glColor3f when lighting is disabled
+        glColor4f(0.0f, 0.0f, 0.0f, 1.0f);
+    } else {
+        // Use material properties when lighting is enabled
+        GLfloat shadowMatAmbient[] = {0.0f, 0.0f, 0.0f, 0.5f};
+        glMaterialfv(GL_FRONT, GL_AMBIENT_AND_DIFFUSE, shadowMatAmbient);
+    }
+    glPushMatrix();
+    glTranslatef(0.0f, -1.6f, -8.0f); // Match ground position
+    myShadowMatrix(groundPlane, lightPos);
+    drawUmbrella(); // Render umbrella's shadow
+    glPopMatrix();
+    glDisable(GL_BLEND);
+}
+
+// ANIMATION FUNCTION FOR ZOOMING
+void updateZoom(){
+    if(isZooming && zoomFactor < 1.5f){// Max scaling factor
+        zoomFactor += zoomSpeed;// Gradually increase zoom factor
+    }else if(!isZooming && zoomFactor > 1.0f){// Default size
+        zoomFactor -= zoomSpeed;// Gradually reset zoom factor
+    }
+}
+
+// Update light
+void updateLight() {
+    if (isLightingEnabled) {
+        glEnable(GL_LIGHTING);
+    } else {
+        glDisable(GL_LIGHTING);
+    }
+    drawGround();
+    drawUmbrella();
+    drawShadow();
+}
+
+// FUNCTION FOR DISPLAY
+void display(){
+    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+    glMatrixMode(GL_MODELVIEW);
+    glLoadIdentity();
+    updateLight();
+    drawShadow();
+    glutSwapBuffers();// Swap buffers
+    angleUmbrella += 0.2f;// Update rotation angle for animation
+}
+
+// ANIMATION FUNCTION FOR CANOPY
+void updateCanopy(){
+    if(isUmbrellaOpen && canopyOpenRatio < 1.0f){
+        canopyOpenRatio += canopySpeed;// Open
+    }else if(!isUmbrellaOpen && canopyOpenRatio > 0.2f){
+        canopyOpenRatio -= canopySpeed;// Close
+    }
+}
+
+// ANIMATION FUNCTION FOR SHIELD EXTENSION
+void updateShield(){
+    if(isShieldActive){
+        // Increase shield height until it reaches maxShieldHeight
+        if(shieldHeight < maxShieldHeight){
+            shieldHeight += shieldSpeed;// Increase shield height
+        }
+    }else{
+        // Decrease shield height until it reaches 0
+        if(shieldHeight > 0.0f){
+            shieldHeight -= shieldSpeed;// Decrease shield height
+        }
+    }
+}
+
+// ANIMATION FUNCTION FOR SHAFT EXTENSION
+void updateShaft(){
+    if(isShaftExtended && shaftLength < 1.6f){
+        shaftLength += shaftExtendSpeed;
+    }else if(!isShaftExtended && shaftLength > 1.3f){
+        shaftLength -= shaftExtendSpeed;
+    }
+    // Update handle position based on shaft length
+    if(isHandleRotate){
+        handlePositionY = handleBaseY-(shaftLength-1.3f)-0.5f;// Adjust handle position based on shaft length
+    }else{
+        handlePositionY = handleBaseY-(shaftLength-1.3f);// Keep it aligned when not rotating
+    }
+}
+
+// ANIMATION FUNCTION FOR HANDLE MOVEMENT
+void updateHandle(){
+    // If the handle is attached to the shaft
+    if(isHandleRotate){
+        // Limit the downward movement
+        if(handlePositionY > handleBaseY-0.4f){// Adjust this value to limit downward movement
+            handlePositionY -= handleMoveSpeed;// Move the handle down
+        }
+    }else{
+        // Return to the base position only if it's below the base
+        if(handlePositionY < handleBaseY) {
+            handlePositionY += handleMoveSpeed;// Move the handle up
+        }
+    }
+    if(handlePositionY < handleBaseY-0.4f) {
+        handlePositionY = handleBaseY-0.4f;// Clamp the value
+    }
+}
+
+// ANIMATION FUNCTION FOR MOUTHPIECE
+void updateMouthpiece(){
+    if(isMouthpieceRotate && mouthpieceAngle > -90.0f){
+        mouthpieceAngle -= mouthpieceSpeed;
+        if(mouthpieceAngle < -90.0f){
+            mouthpieceAngle = -90.0f; // Cap the angle at 90 degrees
+        }
+    }else if(!isMouthpieceRotate && mouthpieceAngle < 0.0f){
+        mouthpieceAngle += mouthpieceSpeed;
+        if(mouthpieceAngle > 0.0f){
+            mouthpieceAngle = 0.0f; // Cap the angle at 0 degrees
+        }
+    }
+}
+
+// TIMER FUNCTION TO REFRESH DISPLAY
+void timer(int value){
+    updateCanopy();// Update canopy height
+    updateShield();
+    updateShaft();// Update Shaft length
+    updateHandle();// Update Handle(Bottle) rotation
+    updateMouthpiece();
+    updateZoom();// Update zooming
+    glutPostRedisplay();// Post a re-paint request to activate display()
+    angleUmbrella += 1.0f;// Increase the rotation angle
+    if(angleUmbrella > 360.0f){
+        angleUmbrella -= 360.0f;// Reset the angle if it exceeds 360 degrees
+    }
+    glutTimerFunc(refreshMills, timer, 0);// Call the timer function again
+}
+
+// KEY INTERACTION FUNCTION
+void handleKey(unsigned char key, int x, int y){
+    if(key == 'o' || key == 'O'){// Open/close the Umbrella
+        isUmbrellaOpen = !isUmbrellaOpen;
+    }
+    if(key == 'e' || key == 'E'){// Extend the Shaft
+        isShaftExtended = !isShaftExtended;
+    }
+    if(key == 'c' || key == 'C'){// Enlarge the charging spot view
+        isZooming = !isZooming;
+    }
+    if(key == 'b' || key == 'B'){
+        isHandleRotate = !isHandleRotate;
+    }
+    if(key == 'd' || key == 'D'){// Rotate mouthpiece
+        isMouthpieceRotate = !isMouthpieceRotate;
+    }
+    if (key == 's' || key == 'S') {// Toggle the canopy extension
+        isShieldActive = !isShieldActive;// This will toggle the visibility
+    }
+    if (key == 'l' || key == 'L') { // Toggle lighting
+        isLightingEnabled = !isLightingEnabled;
+    }
+    glutPostRedisplay();
+}
+
+// RESHAPE FUNCTION
+void reshape(GLsizei width, GLsizei height){
+    if (height == 0) height = 1;  // Prevent division by zero
+    float aspect = (float)width / (float)height;
+
+    // Set the viewport to cover the whole window
+    glViewport(0, 0, width, height);
+
+    // Switch to the projection matrix
+    glMatrixMode(GL_PROJECTION);
+    glLoadIdentity();
+
+    // Set up the perspective projection
+    gluPerspective(25.0, aspect, 0.1, 100.0);
+
+    // Switch back to the modelview matrix
+    glMatrixMode(GL_MODELVIEW);
+    glLoadIdentity();
+}
+
+// MAIN FUNCTION
+int main(int argc, char** argv) {
+    glutInit(&argc, argv);// Initialize GLUT
+    glutInitDisplayMode(GLUT_DOUBLE | GLUT_RGB | GLUT_DEPTH);// Double buffered
+    glutInitWindowSize(880, 1400);// Set the window's initial width & height
+    glutInitWindowPosition(50, 50);// Position window's initial top-left corner
+    glutCreateWindow(title);// Create window with the given title
+    initGL();// OpenGL initialization
+    glutDisplayFunc(display);// Register display callback handler
+    glutReshapeFunc(reshape);// Register reshape callback handler
+    glutKeyboardFunc(handleKey);// Register keyboard callback handler
+    glutTimerFunc(0, timer, 0);// First timer call immediately
+    glutMainLoop();// Enter event-processing loop
+    return 0;
+}

@@ -38,6 +38,16 @@ GLfloat mouthpieceDepth = 0.02f;// Depth of the mouthpiece
 GLfloat mouthpieceAngle = 0.0f;// Rotation angle for the mouthpiece
 GLfloat mouthpieceSpeed = 1.0f;// Speed of mouthpiece
 bool isMouthpieceRotate = false;// Flag for mouthpiece state
+// Rainfall
+GLfloat skyDarkColor[3] = {0.1f, 0.2f, 0.35f}; // Initial dark blue color
+GLfloat skyBrightColor[3] = {0.53f, 0.81f, 0.98f}; // Initial light blue color
+const int numRaindrops = 1000; // Number of raindrops
+struct Raindrop {
+    GLfloat x = 0, y = 1, z = 2; // Position
+    GLfloat speed;   // Fall speed
+};
+Raindrop raindrops[numRaindrops];
+bool isRaining = false; // Toggle rain state
 // Zooming
 GLfloat zoomFactor = 1.0f;// Initial zoom distance
 const GLfloat zoomSpeed = 0.02f; // Speed of zoom transition
@@ -63,6 +73,16 @@ void initGL(){
     glLightfv(GL_LIGHT0, GL_POSITION, lightPos);
     glLightfv(GL_LIGHT0, GL_AMBIENT, lightAmb);
     glEnable(GL_NORMALIZE);// Normalize normals for consistent lighting
+}
+
+// INITIALIZE RAINFALL
+void initRaindrops(){
+    for(int i = 0; i < numRaindrops; ++i) {
+        raindrops[i].x = (rand()% 200-100)/10.0f; // Random X in [-10, 10]
+        raindrops[i].y = (rand()% 100)/10.0f+5.0f; // Random Y in [5, 15]
+        raindrops[i].z = (rand()% 200-100)/10.0f; // Random Z in [-10, 10]
+        raindrops[i].speed = (rand()%50)/1000.0f+0.05f; // Random speed
+    }
 }
 
 // MATRIXES FOR SHADOW
@@ -347,7 +367,7 @@ void drawRibs(){
     for(int i = 0; i < 8; ++i){
         GLfloat angle = i*angleStep;
         GLfloat radius = 0.5f*canopyOpenRatio*canopyOpenedRadius;
-        GLfloat ribLength = 0.7f*canopyHeight-runnerPosition;
+        GLfloat ribLength = 0.8f*canopyHeight-runnerPosition;
         glBegin(GL_LINES);
         glVertex3f(0.0f, runnerPosition-0.2f, 0.0f);// Start at the shaft
         glVertex3f(radius*cos(angle), runnerPosition+ribLength-0.1f, radius*sin(angle));// End at canopy edge
@@ -408,6 +428,19 @@ void drawShield(){
     }
 }
 
+void drawRaindrops() {
+    if(!isRaining) return;// Skip drawing if rain is off
+    glDisable(GL_LIGHTING);// Disable lighting for simplicity
+    glPointSize(2.0f);
+    glColor3f(0.01f, 0.01f, 1.0f);// Light blue raindrops
+    glBegin(GL_POINTS);
+    for(int i = 0; i < numRaindrops; ++i){
+        glVertex3f(raindrops[i].x, raindrops[i].y, raindrops[i].z);
+    }
+    glEnd();
+    glEnable(GL_LIGHTING);// Re-enable lighting
+}
+
 // FUNCTION TO DRAW THE UMBRELLA
 void drawUmbrella(){
     glPushMatrix();
@@ -415,7 +448,7 @@ void drawUmbrella(){
     glScalef(zoomFactor, zoomFactor, zoomFactor);
     glRotatef(angleUmbrella, 0.0f, 1.6f, 0.0f);// Rotate the Umbrella
     glRotatef(25.0f, 1.0f, 0.0f, 0.0f);// So the Umbrella face the viewers
-    //drawCanopy();
+    drawCanopy();
     drawEndTop();
     drawShaft();
     drawWindBlowers();
@@ -591,6 +624,27 @@ void drawShadowUmbrella(){
     glPopMatrix();
 }
 
+// FUNCTION TO DRAW SKY
+void drawSky() {
+    glDepthMask(GL_FALSE);// Disable depth writes for the shadow
+    glPushMatrix();
+    glTranslatef(0.0f, -1.5f, -12.0f);
+    if(!isLightingEnabled){
+        glColor4f(skyDarkColor[0], skyDarkColor[1], skyDarkColor[2], 1.0f);// Use glColor3f when lighting is disabled
+    }else{
+        GLfloat skyMatAmbient[4] = {skyBrightColor[0], skyBrightColor[1], skyBrightColor[2], 1.0f};// Use material properties when lighting is enabled
+        glMaterialfv(GL_FRONT, GL_AMBIENT_AND_DIFFUSE, skyMatAmbient);
+    }
+    glBegin(GL_QUADS);
+    glVertex3f(-50.0f, 50.0f, 0.0f);  // Top-left
+    glVertex3f(50.0f, 50.0f, 0.0f);   // Top-right
+    glVertex3f(50.0f, -50.0f, 0.0f);  // Bottom-right
+    glVertex3f(-50.0f, -50.0f, 0.0f); // Bottom-left
+    glEnd();
+    glPopMatrix();
+    glDepthMask(GL_TRUE); // Re-enable depth writes
+}
+
 // FUNCTION TO DRAW GROUND
 void drawGround() {
     glDepthMask(GL_FALSE);// Disable depth writes for the shadow
@@ -612,11 +666,12 @@ void drawGround() {
     glDepthMask(GL_TRUE); // Re-enable depth writes
 }
 
+// FUNCTION TO DRAW SHADOW
 void drawShadow(){
     glEnable(GL_BLEND);
     glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
     if(!isLightingEnabled){
-        glColor4f(0.0f, 0.0f, 0.0f, 0.9f);// Use glColor3f when lighting is disabled
+        glColor4f(0.0f, 0.0f, 0.0f, 0.6f);// Use glColor3f when lighting is disabled
     }else{
         GLfloat shadowMatAmbient[] = {0.0f, 0.0f, 0.0f, 0.7f};// Use material properties when lighting is enabled
         glMaterialfv(GL_FRONT, GL_AMBIENT_AND_DIFFUSE, shadowMatAmbient);
@@ -627,6 +682,30 @@ void drawShadow(){
     drawShadowUmbrella();
     glPopMatrix();
     glDisable(GL_BLEND);
+}
+
+// ANIMATION FUNCTION FOR RAINING
+void updateRaindrops(){
+    for(int i = 0; i < numRaindrops; ++i){
+        raindrops[i].y -= raindrops[i].speed;// Move down
+        // Check collision with canopy
+        GLfloat canopyY = 1.0f;// Y-position of the canopy
+        GLfloat canopyRadius = canopyOpenRatio*canopyOpenedRadius;
+        if(raindrops[i].y < canopyY && sqrt(raindrops[i].x*raindrops[i].x+raindrops[i].z*raindrops[i].z) < canopyRadius){
+            // Reset raindrop to the top
+            raindrops[i].y = (rand()% 100)/10.0f+5.0f;
+            raindrops[i].x = (rand()% 200-100)/10.0f;
+            raindrops[i].z = (rand()% 200-100)/10.0f;
+            raindrops[i].speed = (rand()%50)/1000.0f+0.02f;
+        }
+        // Reset raindrops that fall below the ground
+        if(raindrops[i].y < -1.0f){
+            raindrops[i].y = (rand()%100)/10.0f +5.0f;
+            raindrops[i].x = (rand()%200-100)/10.0f;
+            raindrops[i].z = (rand()%200-100)/10.0f;
+            raindrops[i].speed = (rand()%50)/1000.0f+0.02f;
+        }
+    }
 }
 
 // ANIMATION FUNCTION FOR ZOOMING
@@ -640,11 +719,12 @@ void updateZoom(){
 
 // Update light
 void updateLight(){
-    if (isLightingEnabled) {
+    if(isLightingEnabled){
         glEnable(GL_LIGHTING);
-    } else {
+    }else{
         glDisable(GL_LIGHTING);
     }
+    drawSky();
     drawGround();
     drawUmbrella();
     drawShadow();
@@ -657,6 +737,7 @@ void display(){
     glLoadIdentity();
     updateLight();
     drawShadow();
+    drawRaindrops();
     glutSwapBuffers();// Swap buffers
     angleUmbrella += 0.2f;// Update rotation angle for animation
 }
@@ -710,11 +791,11 @@ void updateHandle(){
         }
     }else{
         // Return to the base position only if it's below the base
-        if(handlePositionY < handleBaseY) {
+        if(handlePositionY < handleBaseY){
             handlePositionY += handleMoveSpeed;// Move the handle up
         }
     }
-    if(handlePositionY < handleBaseY-0.4f) {
+    if(handlePositionY < handleBaseY-0.4f){
         handlePositionY = handleBaseY-0.4f;// Clamp the value
     }
 }
@@ -724,12 +805,35 @@ void updateMouthpiece(){
     if(isMouthpieceRotate && mouthpieceAngle > -90.0f){
         mouthpieceAngle -= mouthpieceSpeed;
         if(mouthpieceAngle < -90.0f){
-            mouthpieceAngle = -90.0f; // Cap the angle at 90 degrees
+            mouthpieceAngle = -90.0f;// Cap the angle at 90 degrees
         }
     }else if(!isMouthpieceRotate && mouthpieceAngle < 0.0f){
         mouthpieceAngle += mouthpieceSpeed;
         if(mouthpieceAngle > 0.0f){
-            mouthpieceAngle = 0.0f; // Cap the angle at 0 degrees
+            mouthpieceAngle = 0.0f;// Cap the angle at 0 degrees
+        }
+    }
+}
+
+// ANIMATION FUNCTION FOR SKY
+void updateSkyColor(){
+    if(isRaining){
+        for(int i = 0; i < 3; ++i){
+            skyBrightColor[i] -= 0.002f;// Gradual darkening
+            if (skyBrightColor[0] < 0.1f){
+                skyBrightColor[0] = 0.1f;
+                skyBrightColor[1] = 0.2f;
+                skyBrightColor[2] = 0.35f;
+            }
+        }
+    }else{
+        for(int i = 0; i < 3; ++i){
+            skyBrightColor[i] += 0.003f;// Gradual brightening
+            if (skyBrightColor[0] > 0.53f){
+                skyBrightColor[0] = 0.53f;
+                skyBrightColor[1] = 0.81f;
+                skyBrightColor[2] = 0.98f;
+            }
         }
     }
 }
@@ -741,6 +845,8 @@ void timer(int value){
     updateShaft();// Update Shaft length
     updateHandle();// Update Handle(Bottle) rotation
     updateMouthpiece();
+    updateRaindrops();
+    updateSkyColor();
     updateZoom();// Update zooming
     glutPostRedisplay();// Post a re-paint request to activate display()
     angleUmbrella += 1.0f;// Increase the rotation angle
@@ -764,13 +870,18 @@ void handleKey(unsigned char key, int x, int y){
     if(key == 'e' || key == 'E'){// Extend the Shaft
         isShaftExtended = !isShaftExtended;
     }
-    if (key == 'l' || key == 'L') { // Toggle lighting
+    if(key == 'l' || key == 'L'){// Toggle lighting
         isLightingEnabled = !isLightingEnabled;
     }
     if(key == 'o' || key == 'O'){// Open/close the Umbrella
         isUmbrellaOpen = !isUmbrellaOpen;
     }
-    if (key == 's' || key == 'S') {// Toggle the canopy extension
+    if(key == 'r' || key == 'R'){
+        isRaining = !isRaining;// Toggle rain
+        if(isRaining) initRaindrops();// Reset raindrops if rain starts
+        isLightingEnabled = !isLightingEnabled;
+    }
+    if(key == 's' || key == 'S'){// Toggle the canopy extension
         isShieldActive = !isShieldActive;// This will toggle the visibility
     }
     glutPostRedisplay();

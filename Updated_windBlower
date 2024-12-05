@@ -1,0 +1,393 @@
+#include <windows.h>
+#include <GL/glut.h>
+#include <math.h>
+
+char title[] = "All-In-One Umbrella";// Window title
+int refreshMills = 10;// Refresh interval in milliseconds
+
+// GLOBAL VARIABLES
+GLfloat angleUmbrella = 0.0f;// Rotational angle for the umbrella
+// Umbrella Canopy
+GLfloat canopyOpenedRadius = 1.06f;// Initial radius of Canopy
+GLfloat canopyHeight = 1.0f;// Length of Canopy
+GLfloat canopySpeed = 0.02f;// Speed of Canopy movement
+GLfloat canopyOpenRatio = 0.2f;// Speed of Canopy Opening/Closing movement
+// Umbrella Shaft Extension
+GLfloat shaftLength = 1.3f;// Length of the shaft
+GLfloat shaftExtendSpeed = 0.02f;// Speed of extension
+GLfloat shaftRadius = 0.04f;// Radius of shaft
+bool isShaftExtended = false;// Flag for shaft extension state
+// Handle(Bottle)
+GLfloat handleBaseY = -0.5f;// Base position of the handle
+GLfloat handlePositionY = -0.5f;;// Initial Y position of the handle
+GLfloat handleMoveSpeed = 0.0001f;// Speed of downward/upward movement
+// Zooming
+GLfloat zoomFactor = 1.0f;// Initial zoom distance
+const GLfloat zoomSpeed = 0.02f; // Speed of zoom transition
+bool isZooming = false;// Flag for zoom state
+// Light
+static GLfloat groundPlane[4] = {0.0f, 1.0f, 0.0f, 1.5f};// Ground
+static GLfloat lightPos[4] = {4.0f, 4.0f, 0.0f, 1.0f};// Light position
+static GLfloat lightAmb[4] = {0.2f, 0.2f, 0.2f, 1.0f};// Light ambient
+bool isLightingEnabled = true; // Flag for light state
+
+// OPENGL INITIALIZATION
+void initGL(){
+    glClearColor(0.5f, 0.5f, 1.0f, 1.0f);// Set background color
+    glEnable(GL_DEPTH_TEST);// Enable depth testing for z-culling
+    glDepthFunc(GL_LEQUAL);// Set the type of depth-test
+    glClearDepth(1.0f);// Set background depth to farthest
+    glColorMaterial(GL_FRONT_AND_BACK, GL_AMBIENT_AND_DIFFUSE);
+    glShadeModel(GL_SMOOTH);// Enable smooth shading
+    glHint(GL_PERSPECTIVE_CORRECTION_HINT, GL_NICEST);// Nice perspective corrections
+    // Lighting setup
+    glEnable(GL_LIGHTING);
+    glEnable(GL_LIGHT0);
+    glLightfv(GL_LIGHT0, GL_POSITION, lightPos);
+    glLightfv(GL_LIGHT0, GL_AMBIENT, lightAmb);
+    glEnable(GL_NORMALIZE);// Normalize normals for consistent lighting
+}
+
+// MATRIXES FOR SHADOW
+void myShadowMatrix(float ground[4], float light[4]){
+    float dot = ground[0]*light[0]+ground[1]*light[1]+ground[2]*light[2]+ground[3]*light[3];
+    float shadowMat[4][4];
+    shadowMat[0][0] = dot-light[0]*ground[0];
+    shadowMat[1][0] = 0.0-light[0]*ground[1];
+    shadowMat[2][0] = 0.0-light[0]*ground[2];
+    shadowMat[3][0] = 0.0-light[0]*ground[3];
+    shadowMat[0][1] = 0.0-light[1]*ground[0];
+    shadowMat[1][1] = dot-light[1]*ground[1];
+    shadowMat[2][1] = 0.0-light[1]*ground[2];
+    shadowMat[3][1] = 0.0-light[1]*ground[3];
+    shadowMat[0][2] = 0.0-light[2]*ground[0];
+    shadowMat[1][2] = 0.0-light[2]*ground[1];
+    shadowMat[2][2] = dot-light[2]*ground[2];
+    shadowMat[3][2] = 0.0-light[2]*ground[3];
+    shadowMat[0][3] = 0.0-light[3]*ground[0];
+    shadowMat[1][3] = 0.0-light[3]*ground[1];
+    shadowMat[2][3] = 0.0-light[3]*ground[2];
+    shadowMat[3][3] = dot-light[3]*ground[3];
+    glMultMatrixf((const GLfloat*)shadowMat);
+}
+
+void drawShaft(){
+    if(!isLightingEnabled){
+        glColor3f(0.0f, 0.0f, 0.0f);// Use glColor3f when lighting is disabled
+    }else{
+        GLfloat umbrellaColor[4] = {0.1f, 0.1f, 0.1f, 1.0f};// Use material properties when lighting is enabled
+        glMaterialfv(GL_FRONT, GL_AMBIENT_AND_DIFFUSE, umbrellaColor);
+    }
+    GLUquadric* quad2 = gluNewQuadric();
+    glPushMatrix();
+    glTranslatef(0.0f, 0.8f, -0.01f);// Position the Umbrella Shaft to the bottom of the Umbrella Canopy
+    glRotatef(90.0f, 1.0f, 0.0f, 0.0f);// Rotate to align it vertically
+    gluCylinder(quad2, 0.031, 0.04, shaftLength, 20, 8);// Draw the Umbrella Shaft
+    glPopMatrix();
+    gluDeleteQuadric(quad2);
+}
+
+void drawWindBlowers() {
+    GLfloat blowerHeight = 0.1f;     // Height of the cylinder
+    GLfloat blowerRadius = 0.0345f;  // The radius of the cylinder
+    GLfloat blowerOffset = 0.45f;    // The offset of the cylinder (the height from the top of the umbrella)
+
+    GLfloat meshRadius = blowerRadius + 0.01f; // The radius of the grid to ensure overlap with the umbrella
+
+
+    GLfloat offsetX = 0.0f;
+    GLfloat offsetY = -0.02f;
+    GLfloat offsetZ = 0.0f;
+
+    GLUquadric* quad = gluNewQuadric();
+
+
+    if (!isLightingEnabled) {
+        glColor3f(0.2f, 0.2f, 0.2f); // No light, gray
+    } else {
+        GLfloat blowerColor[4] = {0.4f, 0.4f, 0.4f, 1.0f}; // light, other gray
+        glMaterialfv(GL_FRONT, GL_AMBIENT_AND_DIFFUSE, blowerColor);
+    }
+
+
+    glPushMatrix();
+    glTranslatef(0.0f, canopyHeight - blowerOffset, -0.01f); // position
+    glRotatef(90.0f, 1.0f, 0.0f, 0.0f);
+    gluCylinder(quad, blowerRadius, blowerRadius, blowerHeight, 20, 8);
+    glPopMatrix();
+
+
+    float angleStep = 2 * M_PI / 30;
+    float heightStep = blowerHeight / 10;
+
+
+    glColor3f(0.0f, 0.0f, 0.0f);  // Background black
+    glPushMatrix();
+    glTranslatef(offsetX, offsetY, offsetZ); // Offset
+    glBegin(GL_QUADS);
+    for (int i = 0; i < 30; ++i) {
+        float angle1 = i * angleStep;
+        float angle2 = (i + 1) * angleStep;
+
+        for (int j = 0; j < 10; ++j) {
+            float h1 = blowerOffset + j * heightStep;
+            float h2 = blowerOffset + (j + 1) * heightStep;
+
+            glVertex3f(meshRadius * cos(angle1), h1, meshRadius * sin(angle1));
+            glVertex3f(meshRadius * cos(angle2), h1, meshRadius * sin(angle2));
+            glVertex3f(meshRadius * cos(angle2), h2, meshRadius * sin(angle2));
+            glVertex3f(meshRadius * cos(angle1), h2, meshRadius * sin(angle1));
+        }
+    }
+    glEnd();
+    glPopMatrix();
+
+    // Grid
+    glColor3f(0.8f, 0.8f, 0.8f);
+    glPushMatrix();
+    glTranslatef(offsetX, offsetY, offsetZ);
+
+    for (int j = 0; j <= 10; ++j) {
+        float h = blowerOffset + j * heightStep;
+        glBegin(GL_LINE_LOOP);
+        for (int i = 0; i <= 30; ++i) {
+            float angle = i * angleStep;
+
+            glVertex3f(meshRadius * cos(angle), h, meshRadius * sin(angle));
+        }
+        glEnd();
+    }
+
+
+    for (int i = 0; i < 30; ++i) {
+        float angle = i * angleStep;
+        glBegin(GL_LINE_STRIP);
+        for (int j = 0; j <= 10; ++j) {
+            float h = blowerOffset + j * heightStep;
+
+            glVertex3f(meshRadius * cos(angle), h, meshRadius * sin(angle));
+        }
+        glEnd();
+    }
+    glPopMatrix();
+
+    gluDeleteQuadric(quad);
+}
+
+// Wave of white paper
+const float PAPER_WIDTH = 0.7f;
+const float PAPER_HEIGHT = 0.7f;
+const int PAPER_RES_X = 50;
+const int PAPER_RES_Y = 25;
+const float WAVE_AMPLITUDE = 0.025f;
+const float WAVE_SPEED = 0.1f;
+
+float waveTime = 0.0f;
+
+void drawWavingPaper() {
+    glPushMatrix();
+
+    glTranslatef(0.0f, 1.0f, -10.0f); // Center position of umbrella
+
+    glRotatef(angleUmbrella, 0.0f, 1.0f, 0.0f);
+
+    glTranslatef(0.8f, -0.2f, 0.0f);
+
+    glRotatef(90.0f, 1.0f, 0.0f, 0.0f); // Adjust the angle
+    glRotatef(-45.0f, 0.0f, 1.0f, 0.0f);
+    glRotatef(90.0f, 0.0f, 0.0f, 1.0f);
+
+    glColor3f(0.8f, 0.8f, 0.8f);
+
+    for (int y = 0; y < PAPER_RES_Y - 1; ++y) {
+        glBegin(GL_TRIANGLE_STRIP);
+        for (int x = 0; x < PAPER_RES_X; ++x) {
+            float px = (x / (float)(PAPER_RES_X - 1)) * PAPER_WIDTH - PAPER_WIDTH / 2.0f;
+            float py1 = (y / (float)(PAPER_RES_Y - 1)) * PAPER_HEIGHT - PAPER_HEIGHT / 2.0f;
+            float py2 = ((y + 1) / (float)(PAPER_RES_Y - 1)) * PAPER_HEIGHT - PAPER_HEIGHT / 2.0f;
+
+            float pz1 = WAVE_AMPLITUDE * sin(px * 2.0f * M_PI + waveTime + y * 0.2f);
+            float pz2 = WAVE_AMPLITUDE * sin(px * 2.0f * M_PI + waveTime + (y + 1) * 0.2f);
+
+            glVertex3f(px, py1, pz1);
+            glVertex3f(px, py2, pz2);
+        }
+        glEnd();
+    }
+
+    glPopMatrix();
+}
+
+
+void update(int value) {
+    waveTime += WAVE_SPEED;
+    if (waveTime > 2.0f * M_PI) {
+        waveTime -= 2.0f * M_PI;
+    }
+    glutPostRedisplay();
+    glutTimerFunc(16, update, 0);
+}
+
+// FUNCTION TO DRAW THE UMBRELLA
+void drawUmbrella(){
+    glPushMatrix();
+    glTranslatef(0.0f, 1.0f, -10.0f);// Move into the screen, translate to position the Umbrella
+    glScalef(zoomFactor, zoomFactor, zoomFactor);
+    glRotatef(angleUmbrella, 0.0f, 1.6f, 0.0f);// Rotate the Umbrella
+    glRotatef(25.0f, 1.0f, 0.0f, 0.0f);// So the Umbrella face the viewers
+    //drawCanopy();
+    drawShaft();
+    drawWindBlowers();
+    glPopMatrix();
+}
+
+// FUNCTION TO DRAW THE SHADOW
+void drawShadowUmbrella(){
+    glPushMatrix();
+    glTranslatef(0.0f, 1.0f, -10.0f);// Move into the screen, translate to position the Umbrella
+    glScalef(zoomFactor, zoomFactor, zoomFactor);
+    glRotatef(angleUmbrella, 0.0f, 1.6f, 0.0f);// Rotate the Umbrella
+    glRotatef(25.0f, 1.0f, 0.0f, 0.0f);// So the Umbrella face the viewers
+    // Draw Shaft
+    GLUquadric* quad2 = gluNewQuadric();
+    glPushMatrix();
+    glTranslatef(0.0f, 0.8f, -0.01f); // Position the Umbrella Shaft to the bottom of the Umbrella Canopy
+    glRotatef(90.0f, 1.0f, 0.0f, 0.0f); // Rotate to align it vertically
+    gluCylinder(quad2, 0.031, 0.04, shaftLength, 20, 8); // Draw the Umbrella Shaft
+    glPopMatrix();
+    gluDeleteQuadric(quad2);
+    GLUquadric* quad3 = gluNewQuadric();
+    glPushMatrix();
+    glTranslatef(0.0f, handlePositionY, -0.01f);// Position the Umbrella Shaft to the bottom of the Umbrella Canopy
+    glRotatef(90.0f, 1.0f, 0.0f, 0.0f);// Rotate it vertically
+    gluCylinder(quad3, 0.04, 0.04, 0.238f, 80, 80);// Create a torus
+    glPopMatrix();
+    gluDeleteQuadric(quad3);
+    glPopMatrix();
+}
+
+// FUNCTION TO DRAW GROUND
+void drawGround() {
+    glDepthMask(GL_FALSE);// Disable depth writes for the shadow
+    glPushMatrix();
+    glTranslatef(0.0f, -1.5f, -12.0f);
+    if(!isLightingEnabled){
+        glColor3f(0.1f, 0.3f, 0.1f);// Use glColor3f when lighting is disabled
+    }else{
+        GLfloat groundMatAmbient[4] = {0.0f, 0.3f, 0.0f, 0.6f};// Use material properties when lighting is enabled
+        glMaterialfv(GL_FRONT, GL_AMBIENT_AND_DIFFUSE, groundMatAmbient);
+    }
+    glBegin(GL_QUADS);
+    glVertex3f(-3.0f, 0.9f, -1.0f);
+    glVertex3f(3.0f, 0.9f, -1.0f);
+    glVertex3f(3.0f, -1.0f, 1.0f);
+    glVertex3f(-3.0f, -1.0f, 1.0f);
+    glEnd();
+    glPopMatrix();
+    glDepthMask(GL_TRUE); // Re-enable depth writes
+}
+
+void drawShadow(){
+    glEnable(GL_BLEND);
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+    if(!isLightingEnabled){
+        glColor4f(0.0f, 0.0f, 0.0f, 0.9f);// Use glColor3f when lighting is disabled
+    }else{
+        GLfloat shadowMatAmbient[] = {0.0f, 0.0f, 0.0f, 0.7f};// Use material properties when lighting is enabled
+        glMaterialfv(GL_FRONT, GL_AMBIENT_AND_DIFFUSE, shadowMatAmbient);
+    }
+    glPushMatrix();
+    glTranslatef(0.0f, -1.5f, -7.5f); // Match ground position
+    myShadowMatrix(groundPlane, lightPos);
+    drawShadowUmbrella();
+    glPopMatrix();
+    glDisable(GL_BLEND);
+}
+
+// ANIMATION FUNCTION FOR ZOOMING
+void updateZoom(){
+    if(isZooming && zoomFactor < 1.5f){// Max scaling factor
+        zoomFactor += zoomSpeed;// Gradually increase zoom factor
+    }else if(!isZooming && zoomFactor > 1.0f){// Default size
+        zoomFactor -= zoomSpeed;// Gradually reset zoom factor
+    }
+}
+
+// Update light
+void updateLight(){
+    if (isLightingEnabled) {
+        glEnable(GL_LIGHTING);
+    } else {
+        glDisable(GL_LIGHTING);
+    }
+    drawGround();
+    drawUmbrella();
+    drawShadow();
+}
+
+// FUNCTION FOR DISPLAY
+void display(){
+    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+    glMatrixMode(GL_MODELVIEW);
+    glLoadIdentity();
+    updateLight();
+    drawShadow();
+    drawWavingPaper();
+    glutSwapBuffers();// Swap buffers
+    angleUmbrella += 0.2f;// Update rotation angle for animation
+}
+
+// TIMER FUNCTION TO REFRESH DISPLAY
+void timer(int value){
+    updateZoom();// Update zooming
+    glutPostRedisplay();// Post a re-paint request to activate display()
+    angleUmbrella += 1.0f;// Increase the rotation angle
+    if(angleUmbrella > 360.0f){
+        angleUmbrella -= 360.0f;// Reset the angle if it exceeds 360 degrees
+    }
+    glutTimerFunc(refreshMills, timer, 0);// Call the timer function again
+}
+
+// KEY INTERACTION FUNCTION
+void handleKey(unsigned char key, int x, int y){
+    if(key == 'c' || key == 'C'){// Enlarge the charging spot view
+        isZooming = !isZooming;
+    }
+    if (key == 'l' || key == 'L') { // Toggle lighting
+        isLightingEnabled = !isLightingEnabled;
+    }
+    glutPostRedisplay();
+}
+
+// RESHAPE FUNCTION
+void reshape(GLsizei width, GLsizei height){
+    if(height == 0) height = 1;  // Prevent division by zero
+    float aspect = (float)width / (float)height;
+    // Set the viewport to cover the whole window
+    glViewport(0, 0, width, height);
+    // Switch to the projection matrix
+    glMatrixMode(GL_PROJECTION);
+    glLoadIdentity();
+    // Set up the perspective projection
+    gluPerspective(25.0, aspect, 0.1, 100.0);
+    // Switch back to the modelview matrix
+    glMatrixMode(GL_MODELVIEW);
+    glLoadIdentity();
+}
+
+// MAIN FUNCTION
+int main(int argc, char** argv) {
+    glutInit(&argc, argv);// Initialize GLUT
+    glutInitDisplayMode(GLUT_DOUBLE | GLUT_RGB | GLUT_DEPTH);// Double buffered
+    glutInitWindowSize(880, 1400);// Set the window's initial width & height
+    glutInitWindowPosition(50, 50);// Position window's initial top-left corner
+    glutCreateWindow(title);// Create window with the given title
+    initGL();// OpenGL initialization
+    glutDisplayFunc(display);// Register display callback handler
+    glutReshapeFunc(reshape);// Register reshape callback handler
+    glutKeyboardFunc(handleKey);// Register keyboard callback handler
+    glutTimerFunc(0, timer, 0);// First timer call immediately
+    glutTimerFunc(16, update, 0);
+    glutMainLoop();// Enter event-processing loop
+    return 0;
+}

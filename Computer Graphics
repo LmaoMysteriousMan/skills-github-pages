@@ -26,6 +26,25 @@ GLfloat shaftLength = 1.3f;// Length of the shaft
 GLfloat shaftExtendSpeed = 0.02f;// Speed of extension
 GLfloat shaftRadius = 0.04f;// Radius of shaft
 bool isShaftExtended = false;// Flag for shaft extension state
+// Wind Blower
+GLfloat blowerHeight = 0.1f;     // Height of the cylinder
+GLfloat blowerRadius = 0.0345f;  // The radius of the cylinder
+GLfloat blowerOffset = 0.45f;    // The offset of the cylinder (the height from the top of the umbrella)
+GLfloat meshRadius = blowerRadius + 0.01f; // The radius of the grid to ensure overlap with the umbrella
+GLfloat offsetX = 0.0f;
+GLfloat offsetY = -0.01f;
+GLfloat offsetZ = -0.01f;
+GLfloat angleStep = 2 * M_PI / 30;
+GLfloat heightStep = blowerHeight / 10;
+// Paper (Proof got Wind)
+const float PAPER_WIDTH = 0.2f;
+const float PAPER_HEIGHT = 0.3f;
+const int PAPER_RES_X = 50;
+const int PAPER_RES_Y = 25;
+const float WAVE_AMPLITUDE = 0.025f;
+const float WAVE_SPEED = 0.1f;
+float waveTime = 0.0f;
+bool isPaper = false; // Flag for paper state
 // Handle(Bottle)
 GLfloat handleBaseY = -0.5f;// Base position of the handle
 GLfloat handlePositionY = -0.5f;;// Initial Y position of the handle
@@ -169,41 +188,69 @@ void drawShaft(){
     gluDeleteQuadric(quad2);
 }
 
-void drawWindBlowers() {
-    if (!isLightingEnabled) {
-        glColor3f(0.2f, 0.2f, 0.2f); // Use glColor3f when lighting is disabled
-    } else {
-        GLfloat blowerColor[4] = {0.4f, 0.4f, 0.4f, 1.0f}; // Use material properties when lighting is enabled
+void drawGrid(){
+    if(!isLightingEnabled){
+        glColor4f(0.7f, 0.7f, 0.7f, 1.0f); // No light, gray
+    }else{
+        GLfloat blowerColor[4] = {0.9f, 0.9f, 0.9f, 1.0f}; // light, other gray
         glMaterialfv(GL_FRONT, GL_AMBIENT_AND_DIFFUSE, blowerColor);
     }
-    // Parameters for the wind blowers
-    GLfloat blowerHeight = 0.1f;     // Height of the blower cylinders
-    GLfloat blowerRadius = 0.0345f;   // Radius of the blowers
-    GLfloat blowerOffset = 0.59f;    // Offset from the top of the shaft to the blowers
-    GLfloat blowerAngleStart = -75.0f; // Starting angle for the left blower (relative to 0 degrees front)
-    GLfloat blowerAngleEnd = 75.0f;   // Ending angle for the left blower
-    GLfloat blowerAngleShift = 180.0f; // Shift for the right blower (opposite side)
-    GLint slices = 30; // Number of slices for smoothness
-    GLfloat step = (blowerAngleEnd - blowerAngleStart) / slices;
-    GLUquadric* quad = gluNewQuadric();
-    // Draw blowers
-    for (int i = 0; i < 2; ++i) {
-        GLfloat angleShift = (i == 0) ? 0.0f : blowerAngleShift; // Left or right blower
-        glPushMatrix();
-        glTranslatef(0.0f, canopyHeight - blowerOffset, -0.01f);
-        glRotatef(0.0f, 1.0f, 0.0f, 0.0f);
-        glBegin(GL_QUAD_STRIP);
-        for (GLfloat angle = blowerAngleStart + angleShift; angle <= blowerAngleEnd + angleShift; angle += step) {
-            GLfloat rad = angle * M_PI / 180.0f;
-            GLfloat x = cos(rad) * blowerRadius;
-            GLfloat z = sin(rad) * blowerRadius;
-            glVertex3f(x, 0.0f, z);
-            glVertex3f(x, blowerHeight, z);
+    // Grid
+    glPushMatrix();
+    glTranslatef(offsetX, offsetY, offsetZ);
+    for(int j = 0; j <= 10; ++j){
+        float h = blowerOffset+j*heightStep;
+        glBegin(GL_LINE_LOOP);
+        for(int i = 0; i <= 30; ++i){
+            float angle = i*angleStep;
+            glVertex3f(meshRadius*cos(angle), h, meshRadius*sin(angle));
         }
         glEnd();
-        glPopMatrix();
     }
-    gluDeleteQuadric(quad); // Clean up
+    for(int i = 0; i < 30; ++i){
+        float angle = i*angleStep;
+        glBegin(GL_LINE_STRIP);
+        for(int j = 0; j <= 10; ++j){
+            float h = blowerOffset+j*heightStep;
+            glVertex3f(meshRadius*cos(angle), h, meshRadius*sin(angle));
+        }
+        glEnd();
+    }
+    glPopMatrix();
+}
+
+void drawWindBlowers(){
+    GLUquadric* quad = gluNewQuadric();
+    if(!isLightingEnabled){
+        glColor3f(0.2f, 0.2f, 0.2f);// No light, gray
+    }else{
+        GLfloat blowerColor[4] = {0.4f, 0.4f, 0.4f, 1.0f};// light, other gray
+        glMaterialfv(GL_FRONT, GL_AMBIENT_AND_DIFFUSE, blowerColor);
+    }
+    glPushMatrix();
+    glTranslatef(0.0f, canopyHeight - blowerOffset, -0.01f);// position
+    glRotatef(90.0f, 1.0f, 0.0f, 0.0f);
+    gluCylinder(quad, blowerRadius, blowerRadius, blowerHeight, 20, 8);
+    glPopMatrix();
+    glPushMatrix();
+    glTranslatef(offsetX, offsetY, offsetZ);// Offset
+    glBegin(GL_QUADS);
+    for (int i = 0; i < 30; ++i) {
+        float angle1 = i*angleStep;
+        float angle2 = (i+1)*angleStep;
+        for (int j = 0; j < 10; ++j) {
+            float h1 = blowerOffset+j*heightStep;
+            float h2 = blowerOffset+(j+1)*heightStep;
+            glVertex3f(meshRadius*cos(angle1), h1, meshRadius*sin(angle1));
+            glVertex3f(meshRadius*cos(angle2), h1, meshRadius*sin(angle2));
+            glVertex3f(meshRadius*cos(angle2), h2, meshRadius*sin(angle2));
+            glVertex3f(meshRadius*cos(angle1), h2, meshRadius*sin(angle1));
+        }
+    }
+    glEnd();
+    glPopMatrix();
+    drawGrid();
+    gluDeleteQuadric(quad);
 }
 
 void drawHandle(){
@@ -385,6 +432,53 @@ void drawRibs(){
             glVertex3f(x, y, z);// Create the rib
         }
         glEnd();
+    }
+}
+
+void drawWavingPaper(){
+    if(!isLightingEnabled){
+        glColor3f(0.7f, 0.7f, 0.7f);// No light, gray
+    }else{
+        GLfloat blowerColor[4] = {0.9f, 0.9f, 0.9f, 1.0f};// light, other gray
+        glMaterialfv(GL_FRONT, GL_AMBIENT_AND_DIFFUSE, blowerColor);
+    }
+    glPushMatrix();
+    glTranslatef(-0.1f, 1.0f, -10.0f);// Center position of umbrella
+    glRotatef(angleUmbrella, 0.0f, 1.0f, 0.0f);
+    glTranslatef(0.25f, 0.3f, 0.0f);
+    glRotatef(100.0f, 1.0f, 0.0f, 0.0f);// Adjust the angle
+    glRotatef(-45.0f, 0.0f, 1.0f, 0.0f);
+    glRotatef(80.0f, 0.0f, 0.0f, 1.0f);
+    for(int y = 0; y < PAPER_RES_Y - 1; ++y){
+        glBegin(GL_TRIANGLE_STRIP);
+        for(int x = 0; x < PAPER_RES_X; ++x){
+            float px = (x/(float)(PAPER_RES_X-1))*PAPER_WIDTH-PAPER_WIDTH/2.0f;
+            float py1 = (y/(float)(PAPER_RES_Y-1))*PAPER_HEIGHT-PAPER_HEIGHT/2.0f;
+            float py2 = ((y+1)/(float)(PAPER_RES_Y-1))*PAPER_HEIGHT-PAPER_HEIGHT/2.0f;
+            float pz1 = WAVE_AMPLITUDE*sin(px*2.0f*M_PI+waveTime+y*0.2f);
+            float pz2 = WAVE_AMPLITUDE*sin(px*2.0f*M_PI+waveTime+(y + 1)*0.2f);
+            glVertex3f(px, py1, pz1);
+            glVertex3f(px, py2, pz2);
+        }
+        glEnd();
+    }
+    glPopMatrix();
+}
+
+void updatePaper(){
+    if(isPaper){
+        drawWavingPaper();
+    }
+}
+
+void updatePaper(int value){
+    if(isPaper){
+        waveTime += WAVE_SPEED;
+        if(waveTime > 2.0f * M_PI){
+            waveTime -= 2.0f * M_PI;
+        }
+        glutPostRedisplay();
+        glutTimerFunc(16, updatePaper, 0); // Schedule the next update only if isPaper is true
     }
 }
 
@@ -737,6 +831,9 @@ void display(){
     glLoadIdentity();
     updateLight();
     drawShadow();
+    if(isPaper){
+        drawWavingPaper();
+    }
     drawRaindrops();
     glutSwapBuffers();// Swap buffers
     angleUmbrella += 0.2f;// Update rotation angle for animation
@@ -883,6 +980,12 @@ void handleKey(unsigned char key, int x, int y){
     }
     if(key == 's' || key == 'S'){// Toggle the canopy extension
         isShieldActive = !isShieldActive;// This will toggle the visibility
+    }
+    if(key == 'w' || key == 'W'){
+        isPaper = !isPaper;
+        if(isPaper){
+            glutTimerFunc(0, updatePaper, 0);// Restart the paper animation
+        }
     }
     glutPostRedisplay();
 }

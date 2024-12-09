@@ -8,7 +8,11 @@ GLfloat canopyOpenRatio = 0.5f;    // Canopy opening ratio (affects ribs' extens
 GLfloat canopyOpenedRadius = 1.06f; // Radius of the canopy when fully opened
 GLfloat runnerPosition = 0.0f;     // Position of the runner on the shaft
 
-bool moveToTop = false; // Toggle state for movement
+bool isMovingUp = false;           // Indicates whether the ribs are moving up
+bool isMovingDown = false;         // Indicates whether the ribs are moving down
+GLfloat ribYOffset = 0.0f;         // Y-offset for gradual movement
+GLfloat ribTargetOffset = 0.4f;    // Target offset for the ribs' final position
+GLfloat movementSpeed = 0.01f;     // Speed of movement
 
 // Function to draw the runner (the central part connecting the ribs to the shaft)
 void drawRunner() {
@@ -28,12 +32,12 @@ void drawRibs() {
     glColor3f(0.1f, 0.1f, 0.1f); // Set rib color (dark gray)
     glLineWidth(3.0f);           // Set rib thickness
 
-    GLfloat angles[4] = {M_PI / 4, 3*M_PI / 4, 5*M_PI / 4, 7*M_PI / 4}; // Angles in radians for 45°, 135°, 225°, 315°
+    GLfloat angles[4] = {M_PI / 4, 3*M_PI / 4, 5*M_PI / 4, 7*M_PI / 4}; // Angles in radians for 45Â°, 135Â°, 225Â°, 315Â°
     GLfloat radius = 0.5f;
 
     for (int i = 0; i < 4; ++i) {
         GLfloat angle = angles[i];
-        GLfloat yOffset = moveToTop ? canopyHeight : (runnerPosition - 0.1f);
+        GLfloat yOffset = runnerPosition - 0.1f + ribYOffset;
 
         glBegin(GL_QUADS);
         glVertex3f(0.0f, -0.38f, 0.0f);
@@ -46,11 +50,40 @@ void drawRibs() {
     glLineWidth(1.0f); // Reset line thickness
 }
 
+// Timer function
+void timerFunction(int value) {
+    if (isMovingUp) {
+        ribYOffset += movementSpeed;
+        if (ribYOffset >= ribTargetOffset) {
+            ribYOffset = ribTargetOffset;
+            isMovingUp = false; // Stop upward movement
+        }
+    } else if (isMovingDown) {
+        ribYOffset -= movementSpeed;
+        if (ribYOffset <= 0.0f) {
+            ribYOffset = 0.0f;
+            isMovingDown = false; // Stop downward movement
+        }
+    }
+
+    glutPostRedisplay();                // Redraw the scene
+    if (isMovingUp || isMovingDown) {   // Continue the animation if movement is still ongoing
+        glutTimerFunc(16, timerFunction, 0); // Call again in ~16 ms (for ~60 FPS)
+    }
+}
+
 // Key press handler
 void handleKeyPress(unsigned char key, int x, int y) {
     if (key == 'P' || key == 'p') {
-        moveToTop = !moveToTop; // Toggle the movement state
-        glutPostRedisplay();   // Request a redraw
+        if (!isMovingUp && !isMovingDown) {
+            if (ribYOffset == 0.0f) {
+                isMovingUp = true; // Start moving up
+                glutTimerFunc(16, timerFunction, 0);
+            } else if (ribYOffset == ribTargetOffset) {
+                isMovingDown = true; // Start moving down
+                glutTimerFunc(16, timerFunction, 0);
+            }
+        }
     }
 }
 
